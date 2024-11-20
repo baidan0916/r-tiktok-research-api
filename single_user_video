@@ -1,0 +1,206 @@
+library(httr)
+library(jsonlite)
+library(lubridate)
+library(base)
+
+### Functions (defining a new function called get_access_token. 
+get_access_token <- function(client_key, client_secret) {
+  # Endpoint URL (This line sets the URL that the function will send the request to. This URL is the endpoint for requesting an access token from the TikTok API)
+  endpoint_url <- "https://open.tiktokapis.com/v2/oauth/token/"
+  # Request body parameters (This line creates a list that contains the data you’re sending with your request. This includes your client_key and client_secret, as well as the grant_type, which is set to 'client_credentials')
+  body <- list(
+    client_key = client_key,
+    client_secret = client_secret,
+    grant_type = 'client_credentials'
+  )
+  
+  # Make the POST request
+#This line sends a POST request to the endpoint_url with the data in body. The encode = "form" part tells R to send the data as form data (the way an HTML form would send the data)
+  response <- POST(url = endpoint_url, 
+                   body = body, 
+                   encode = "form")
+  
+  # Parse the response （This line takes the response from the server, parses it as JSON, and stores it in response_json）
+  response_json <- content(response, type = "application/json")
+  
+  # Check for the presence of the access token in the response
+  if (!is.null(response_json$access_token)) {
+    cat("Access Token:", response_json$access_token, "\n")
+    cat("Expires In:", response_json$expires_in, "\n")
+    cat("Token Type:", response_json$token_type, "\n")
+    return(response_json$access_token)
+  } else {
+    # If the access token is not present, print the error details
+    cat("Error:", response_json$error, "\n")
+    cat("Error Description:", response_json$error_description, "\n")
+    cat("Log ID:", response_json$log_id, "\n")
+  }
+}
+
+convert_videos_to_dataframe <- function(videos_metadata) {
+  # Convert each video's metadata to a data.frame row
+  video_rows <- lapply(videos_metadata, function(video) {
+    # Iterate over each field in the video metadata
+    for (name in names(video)) {
+      # Check if the field is a list
+      if (is.list(video[[name]])) {
+        # Flatten the list and collapse into a comma-separated string
+        video[[name]] <- paste(unlist(video[[name]]), collapse = ", ")
+      }
+    }
+    
+    # Convert the single video's metadata to a data.frame
+    video_df <- as.data.frame(t(unlist(video, recursive = FALSE)))
+    
+    return(video_df)
+  })
+  
+  # Combine all video rows into a single data.frame
+  videos_df <- do.call(plyr::rbind.fill, video_rows)
+  
+  # Fix row names to avoid duplication
+  rownames(videos_df) <- NULL
+  return(videos_df)
+}
+
+# Replace with your actual client key and client secret
+client_key <- "awrnqujptj50tvm1"
+client_secret <- "FUgVinaVbareNRvpKzD69LcJQF65k3cl"
+
+# Call the function with your credentials; store Bearer token (which lasts for 2h)
+access_token <- get_access_token(client_key, client_secret)
+
+### Store Access token (last for 2 hours)
+# TikTok API endpoints
+video = "https://open.tiktokapis.com/v2/research/video/query/"
+user = "https://open.tiktokapis.com/v2/research/user/info/"
+comments = "https://open.tiktokapis.com/v2/research/video/comment/list/"
+
+####################################################################################################################################################################################################################################################################################################################################
+####################################################################################################################################################################################################################################################################################################################################
+###                                       Query video data                                        ##################################################################################################################################################################################################################################
+####################################################################################################################################################################################################################################################################################################################################
+####################################################################################################################################################################################################################################################################################################################################
+# Specify your desired start and end dates ###CHANGE DATES
+start_date = "20190901"  
+end_date = "20191231"    
+# Authorization token (replace with your actual token)
+auth_token <-access_token
+# Headers
+headers <- add_headers(
+  `Authorization` = paste("Bearer", auth_token),
+  `Content-Type` = "application/json"
+)
+
+calculate_end_date <- function(start_date_string) {
+  # Convert the input string to a Date object
+  start_date <- as.Date(start_date_string, format="%Y%m%d")
+  
+  # Add 30 days to the start date
+  end_date <- start_date + 30
+  # Return the end date in "YYYYMMDD" format
+  return(format(end_date, "%Y%m%d"))
+}
+##CHANG EDATE########
+# Use the function with the input "20190901"
+start_date_string <- "20190901"
+end_date_string <- calculate_end_date(start_date_string)
+# Print the result
+print(end_date_string)
+
+#tiktokers <- c("hannahstocking", "lizzza", "ameliadimz","maddiegracejepson")
+
+#CHANGE USERNAME FROM 1 OF THEM ABOVE
+tiktokers <- c("lizzza")
+
+## Final object where to store data
+videos.metadata <- NULL
+
+for (user in tiktokers){
+  ## Loop over dates 
+  ##CHANGE DATE####
+  start_date <- "20190901"
+  while(TRUE) {
+    print(paste0("Pulling [", user, "] data for ", format(as.Date(start_date, format="%Y%m%d"), "%B %Y")))
+    # Calculate the end date based on the start date
+    end_date <- calculate_end_date(start_date)
+    # Set the query parameters
+    query_params_video <- list(
+      fields = "id,video_description,create_time,region_code,share_count,view_count,like_count,comment_count,music_id,hashtag_names,username,effect_ids,playlist_id,voice_to_text",
+      max_count = 100,
+      start_date = start_date,
+      end_date = end_date
+    )
+    # Authorization token (replace with your actual token)
+    auth_token <-access_token
+    
+    # Headers
+    headers <- add_headers(
+      `Authorization` = paste("Bearer", auth_token),
+      `Content-Type` = "application/json"
+    )
+    # Data payload (define data to query from API)
+    data_raw <- list(
+      query = list(
+        "and" = list(
+          list(
+            operation = "EQ",
+            field_name = "username",
+            field_values = list(user)
+          )
+        )
+      ),
+      max_count = 100,
+      cursor = 0,
+      start_date = start_date,
+      end_date = end_date
+    )
+    # Convert data to JSON
+    data_json <- toJSON(data_raw, auto_unbox = TRUE)
+    # Add 'fields' as a query parameter directly to the POST function
+    response <- POST(video, query = list(fields = query_params_video$fields), body = data_json, config = headers, encode = "json")
+    # Check the response status
+    if (status_code(response) == 200) {
+      print("Request successful")
+      # Parse the response content
+      content <- content(response, type = "application/json")
+      #print(content)
+    } else {
+      print(paste("Request failed with status:", status_code(response)))
+      # Additional error information
+      error_content <- content(response)
+      if (!is.null(error_content$error)) {
+        print(paste("Error code:", error_content$error$code))
+        print(paste("Error message:", error_content$error$message))
+      }
+    }
+    
+    # Request data
+    request.data <- content$data
+    # Index of last video pulled 
+    request.data$cursor
+    # More videos available in time period specified in query that were not pulled by the request?
+    if(request.data$has_more == TRUE){
+      print("Requested period has more than 100 videos.")
+      break
+    }
+    # Actual video data:
+    videos.metadata.temp <- convert_videos_to_dataframe(request.data$videos)
+    if(!is.null(videos.metadata.temp)){
+      videos.metadata.temp$create_time <- as.POSIXct(as.numeric(videos.metadata.temp$create_time), origin="1970-01-01", tz="UTC")
+      # Append data
+      videos.metadata <- plyr::rbind.fill(videos.metadata, videos.metadata.temp)
+    }
+    
+    # Break the loop if the end date is beyond our range of interest #CHANGE DATE
+    if(as.Date(end_date, format = "%Y%m%d") > as.Date("20191231", format = "%Y%m%d")) {
+      break
+    }
+    
+    # Update the start date for the next iteration
+    start_date <- format(as.Date(end_date, format = "%Y%m%d")+1, "%Y%m%d")
+  }
+}
+
+# Replace '/path/to/your/local/drive' with the actual path to your local drive ##CHANGE FILE NAME##
+write.csv(videos.metadata, file = "YOUR OWN PATH/videos.metadata_lizzza_2019.csv")
