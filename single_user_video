@@ -64,8 +64,8 @@ convert_videos_to_dataframe <- function(videos_metadata) {
 }
 
 # Replace with your actual client key and client secret
-client_key <- "awrnqujptj50tvm1"
-client_secret <- "FUgVinaVbareNRvpKzD69LcJQF65k3cl"
+client_key <- "awrnqujptj####"
+client_secret <- "FUgVinaVbareNRvpKzD69LcJQF####"
 
 # Call the function with your credentials; store Bearer token (which lasts for 2h)
 access_token <- get_access_token(client_key, client_secret)
